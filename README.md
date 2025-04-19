@@ -1,9 +1,24 @@
-# Feather Storefront Backend
+# Feather Storefront API (v2 - Multi-Distributor Mock)
 
-This is the Node.js backend for Feather Storefront. It connects to QuickBooks Online to fetch product data.
+This version includes:
+- Session-based login for Distributors (and optionally Accounts)
+- In-memory mock data for Distributors, Accounts, and Products
+- Filtered `/api/items` based on logged-in Distributor
+
+## Endpoints
+
+### POST /login
+Body:
+{
+  "distributorId": "dist001",
+  "accountId": "acct101" // optional
+}
+
+### GET /api/items
+Returns products only for the authenticated Distributor
 
 ## Setup
 
-1. Copy `.env.example` to `.env` and fill in your QuickBooks credentials.
+1. Copy `.env.example` to `.env`
 2. Run `npm install`
-3. Start the server with `node index.js` or `npm start`
+3. Start with `npm start`
