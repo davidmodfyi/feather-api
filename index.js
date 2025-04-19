@@ -20,7 +20,7 @@ app.use(express.json());
 
 app.use(session({
   name: 'feather.sid',
-  secret: process.env.SESSION_SECRET || 'feathersecret',
+  secret: 'THIS_IS_A_TEST_SECRET_DO_NOT_USE_IN_PRODUCTION',
   resave: false,
   saveUninitialized: false,
   cookie: {
