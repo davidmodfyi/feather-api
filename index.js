@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
-const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
@@ -11,61 +10,54 @@ app.use(cors({
   origin: 'https://feather-storefront-client.onrender.com',
   credentials: true
 }));
+
 app.use(express.json());
+
 app.use(session({
+  name: 'feather.sid',
   secret: process.env.SESSION_SECRET || 'feathersecret',
   resave: false,
-  saveUninitialized: true
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    httpOnly: true,
+    sameSite: 'none'
+  }
 }));
 
-app.get('/auth/qbo', (req, res) => {
-  const redirectUri = encodeURIComponent(process.env.QBO_REDIRECT_URI);
-  const url = \`https://appcenter.intuit.com/connect/oauth2?client_id=\${process.env.QBO_CLIENT_ID}&redirect_uri=\${redirectUri}&response_type=code&scope=com.intuit.quickbooks.accounting\`;
-  res.redirect(url);
+// Dummy data
+const distributors = [
+  { id: 'dist001', name: 'Sunshine Distributors' },
+  { id: 'dist002', name: 'Northwind Wholesalers' }
+];
+
+const accounts = [
+  { id: 'acct101', distributor_id: 'dist001', name: 'Joe\'s Grocery' },
+  { id: 'acct102', distributor_id: 'dist001', name: 'Fresh Farm Market' },
+  { id: 'acct201', distributor_id: 'dist002', name: 'City Mini Mart' }
+];
+
+const products = [
+  { id: 'p001', distributor_id: 'dist001', name: 'Organic Bananas', sku: 'BAN001', unitPrice: 1.99 },
+  { id: 'p002', distributor_id: 'dist001', name: 'Almond Milk', sku: 'ALM002', unitPrice: 3.49 },
+  { id: 'p003', distributor_id: 'dist002', name: 'Sparkling Water', sku: 'SPK003', unitPrice: 0.99 }
+];
+
+// Routes
+app.post('/login', (req, res) => {
+  const { distributorId, accountId } = req.body;
+  if (!distributorId) return res.status(400).send('distributorId is required');
+  req.session.distributor_id = distributorId;
+  req.session.account_id = accountId || null;
+  res.send({ status: 'logged_in', distributorId, accountId });
 });
 
-app.get('/auth/callback', async (req, res) => {
-  const code = req.query.code;
-  const tokenUrl = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
-  const creds = Buffer.from(\`\${process.env.QBO_CLIENT_ID}:\${process.env.QBO_CLIENT_SECRET}\`).toString('base64');
+app.get('/api/items', (req, res) => {
+  const distributorId = req.session.distributor_id;
+  if (!distributorId) return res.status(401).json({ error: 'Not authenticated' });
 
-  try {
-    const { data } = await axios.post(tokenUrl, new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: process.env.QBO_REDIRECT_URI
-    }), {
-      headers: {
-        Authorization: \`Basic \${creds}\`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
-
-    req.session.qbo = data;
-    res.redirect(process.env.FRONTEND_URL || 'http://localhost:3000');
-  } catch (err) {
-    console.error(err.response?.data || err);
-    res.status(500).send('OAuth failed');
-  }
+  const filtered = products.filter(p => p.distributor_id === distributorId);
+  res.json(filtered);
 });
 
-app.get('/api/items', async (req, res) => {
-  const accessToken = req.session.qbo?.access_token;
-  const realmId = req.session.qbo?.realmId;
-  if (!accessToken || !realmId) return res.status(401).send('Not authenticated');
-
-  try {
-    const { data } = await axios.get(\`https://quickbooks.api.intuit.com/v3/company/\${realmId}/query?query=SELECT * FROM Item\`, {
-      headers: {
-        Authorization: \`Bearer \${accessToken}\`,
-        Accept: 'application/json'
-      }
-    });
-    res.json(data.QueryResponse.Item || []);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Error fetching items');
-  }
-});
-
-app.listen(PORT, () => console.log(\`Server running on port \${PORT}\`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
