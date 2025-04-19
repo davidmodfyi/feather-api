@@ -6,10 +6,15 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors({
+const corsOptions = {
   origin: 'https://feather-storefront-client.onrender.com',
-  credentials: true
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // <-- handle preflight
 
 app.use(express.json());
 
