@@ -58,9 +58,9 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/api/items', (req, res) => {
+  console.log('Session state:', req.session);
   const distributorId = req.session.distributor_id;
-  if (!distributorId) return res.status(401).json({ error: 'Not authenticated' });
-
+  if (!distributorId) return res.status(401).json([]);  // Return empty array instead of error object
   const filtered = products.filter(p => p.distributor_id === distributorId);
   res.json(filtered);
 });
