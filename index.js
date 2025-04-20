@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 const corsOptions = {
-  origin: 'https://feather-storefront-client.onrender.com',
+  origin: 'https://www.featherstorefront.com',
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
