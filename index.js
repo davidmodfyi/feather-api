@@ -57,6 +57,7 @@ app.post('/login', (req, res) => {
   req.session.account_id = accountId || null;
 
   req.session.save(() => {
+    console.log("🔐 Session created:", req.session);
     res.send({ status: 'logged_in', distributorId, accountId });
   });
 });
