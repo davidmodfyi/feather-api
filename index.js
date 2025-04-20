@@ -6,12 +6,28 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors({ origin: true, credentials: true }));
+const corsOptions = {
+  origin: 'https://feather-storefront-client.onrender.com',
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // <-- handle preflight
+
 app.use(express.json());
+
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'feathersecret',
+  name: 'feather.sid',
+  secret: 'THIS_IS_A_TEST_SECRET_DO_NOT_USE_IN_PRODUCTION',
   resave: false,
-  saveUninitialized: true
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    httpOnly: true,
+    sameSite: 'none'
+  }
 }));
 
 // Dummy data
@@ -36,15 +52,19 @@ const products = [
 app.post('/login', (req, res) => {
   const { distributorId, accountId } = req.body;
   if (!distributorId) return res.status(400).send('distributorId is required');
+
   req.session.distributor_id = distributorId;
   req.session.account_id = accountId || null;
-  res.send({ status: 'logged_in', distributorId, accountId });
+
+  req.session.save(() => {
+    res.send({ status: 'logged_in', distributorId, accountId });
+  });
 });
 
 app.get('/api/items', (req, res) => {
+  console.log('Session state:', req.session);
   const distributorId = req.session.distributor_id;
-  if (!distributorId) return res.status(401).send('Not authenticated');
-
+  if (!distributorId) return res.status(401).json([]);  // Return empty array instead of error object
   const filtered = products.filter(p => p.distributor_id === distributorId);
   res.json(filtered);
 });
