@@ -6,28 +6,12 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-const corsOptions = {
-  origin: 'https://feather-storefront-client.onrender.com',
-  credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
-};
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // <-- handle preflight
-
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
-
 app.use(session({
-  name: 'feather.sid',
-  secret: 'THIS_IS_A_TEST_SECRET_DO_NOT_USE_IN_PRODUCTION',
+  secret: process.env.SESSION_SECRET || 'feathersecret',
   resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: true,
-    httpOnly: true,
-    sameSite: 'none'
-  }
+  saveUninitialized: true
 }));
 
 // Dummy data
@@ -58,9 +42,9 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/api/items', (req, res) => {
-  console.log('Session state:', req.session);
   const distributorId = req.session.distributor_id;
-  if (!distributorId) return res.status(401).json([]);  // Return empty array instead of error object
+  if (!distributorId) return res.status(401).send('Not authenticated');
+
   const filtered = products.filter(p => p.distributor_id === distributorId);
   res.json(filtered);
 });
