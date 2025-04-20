@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const MemoryStore = require('memorystore')(session);
 require('dotenv').config();
 
 const app = express();
@@ -19,12 +20,13 @@ app.options('*', cors(corsOptions)); // <-- handle preflight
 app.use(express.json());
 
 app.use(session({
+  store: new MemoryStore({ checkPeriod: 86400000 }), // clean-up every 24h
   name: 'feather.sid',
-  secret: 'THIS_IS_A_TEST_SECRET_DO_NOT_USE_IN_PRODUCTION',
+  secret: process.env.SESSION_SECRET || 'feathersecret',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,
+    secure: false,            // ok for dev
     httpOnly: true,
     sameSite: 'none'
   }
