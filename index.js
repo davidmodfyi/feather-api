@@ -19,6 +19,8 @@ app.options('*', cors(corsOptions)); // <-- handle preflight
 
 app.use(express.json());
 
+app.set('trust proxy', 1); 
+
 app.use(session({
   store: new MemoryStore({ checkPeriod: 86400000 }), // clean-up every 24h
   name: 'feather.sid',
