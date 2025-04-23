@@ -50,11 +50,21 @@ const accounts = [
   { id: 'acct201', distributor_id: 'dist002', name: 'City Mini Mart' }
 ];
 
-const products = [
-  { id: 'p001', distributor_id: 'dist001', name: 'Organic Bananas', sku: 'BAN001', unitPrice: 1.99 },
-  { id: 'p002', distributor_id: 'dist001', name: 'Almond Milk', sku: 'ALM002', unitPrice: 3.49 },
-  { id: 'p003', distributor_id: 'dist002', name: 'Sparkling Water', sku: 'SPK003', unitPrice: 0.99 }
+const categories = [
+  'Produce', 'Dairy', 'Bakery', 'Meat', 'Beverages', 'Snacks', 'Frozen', 'Pantry'
 ];
+
+const products = Array.from({ length: 150 }).map((_, i) => {
+  const category = categories[i % categories.length];
+  return {
+    id: `p${String(i + 1).padStart(3, '0')}`,
+    distributor_id: 'dist001',
+    name: `${category} Item ${i + 1}`,
+    sku: `${category.toUpperCase().slice(0, 3)}${i + 1}`,
+    unitPrice: Number((Math.random() * 15 + 1).toFixed(2)),
+    category
+  };
+});
 
 // Routes
 app.post('/login', (req, res) => {
