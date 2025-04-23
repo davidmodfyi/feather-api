@@ -72,6 +72,17 @@ app.post('/login', (req, res) => {
   });
 });
 
+app.post('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('feather.sid', {
+      path: '/',
+      sameSite: 'none',
+      secure: true
+    });
+    res.send({ status: 'logged_out' });
+  });
+});
+
 app.get('/api/items', (req, res) => {
   console.log('Session state:', req.session);
   const distributorId = req.session.distributor_id;
