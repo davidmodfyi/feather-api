@@ -40,6 +40,10 @@ const distributors = [
   { id: 'dist002', name: 'Northwind Wholesalers' }
 ];
 
+const users = [
+  { username: 'admin', password: 'secret123', distributor_id: 'dist001' }
+];
+
 const accounts = [
   { id: 'acct101', distributor_id: 'dist001', name: 'Joe\'s Grocery' },
   { id: 'acct102', distributor_id: 'dist001', name: 'Fresh Farm Market' },
@@ -54,15 +58,17 @@ const products = [
 
 // Routes
 app.post('/login', (req, res) => {
-  const { distributorId, accountId } = req.body;
-  if (!distributorId) return res.status(400).send('distributorId is required');
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username && u.password === password);
 
-  req.session.distributor_id = distributorId;
-  req.session.account_id = accountId || null;
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+  req.session.distributor_id = user.distributor_id;
+  req.session.account_id = null;
 
   req.session.save(() => {
     console.log("🔐 Session created:", req.session);
-    res.send({ status: 'logged_in', distributorId, accountId });
+    res.json({ status: 'logged_in', distributorId: user.distributor_id });
   });
 });
 
