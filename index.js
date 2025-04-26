@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const db = require('./database');
 const session = require('express-session');
 const MemoryStore = require('memorystore')(session);
 require('dotenv').config();
@@ -131,17 +132,15 @@ app.post('/logout', (req, res) => {
 app.get('/api/items', (req, res) => {
   const distributorId = req.session.distributor_id;
   if (!distributorId) return res.status(401).json([]);
-
-  const filtered = products.filter(p => p.distributor_id === distributorId);
-  res.json(filtered);
+  const products = db.getProductsByDistributor(distributorId);
+  res.json(products);
 });
 
 app.get('/api/accounts', (req, res) => {
   const distributorId = req.session.distributor_id;
   if (!distributorId) return res.status(401).json([]);
-
-  const filtered = accounts.filter(a => a.distributor_id === distributorId);
-  res.json(filtered);
+  const accounts = db.getAccountsByDistributor(distributorId);
+  res.json(accounts);
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
