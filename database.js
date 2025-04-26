@@ -13,7 +13,14 @@ function getAccountsByDistributor(distributorId) {
   return stmt.all(distributorId);
 }
 
+function getUserByUsername(username) {
+  const stmt = db.prepare('SELECT * FROM users WHERE username = ?');
+  return stmt.get(username);
+}
+
 module.exports = {
   getProductsByDistributor,
-  getAccountsByDistributor
+  getAccountsByDistributor,
+  getUserByUsername
 };
+
