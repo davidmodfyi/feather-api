@@ -46,9 +46,32 @@ const users = [
 ];
 
 const accounts = [
-  { id: 'acct101', distributor_id: 'dist001', name: 'Joe\'s Grocery' },
-  { id: 'acct102', distributor_id: 'dist001', name: 'Fresh Farm Market' },
-  { id: 'acct201', distributor_id: 'dist002', name: 'City Mini Mart' }
+  // Ocean Wave customers
+  ...Array.from({ length: 50 }).map((_, i) => ({
+    id: `ow${String(i + 1).padStart(3, '0')}`,
+    distributor_id: 'dist001',
+    name: `Joe's Market ${i + 1}`,
+    street: `${100 + i} Ocean Dr`,
+    city: 'Miami',
+    state: 'FL',
+    zip: `331${String(i).padStart(2, '0')}`,
+    price_level: (i % 4) + 1,
+    payment_terms: 'Net 30',
+    email: `oceanwave${i + 1}@example.com`
+  })),
+  // Palma Cigars customers
+  ...Array.from({ length: 50 }).map((_, i) => ({
+    id: `pc${String(i + 1).padStart(3, '0')}`,
+    distributor_id: 'dist002',
+    name: `Cigar Lounge ${i + 1}`,
+    street: `${500 + i} Palma Blvd`,
+    city: 'Tampa',
+    state: 'FL',
+    zip: `336${String(i).padStart(2, '0')}`,
+    price_level: (i % 4) + 1,
+    payment_terms: 'Net 15',
+    email: `palmacigars${i + 1}@example.com`
+  }))
 ];
 
 const categories = [
@@ -93,6 +116,7 @@ app.post('/login', (req, res) => {
   });
 });
 
+
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('feather.sid', {
@@ -109,6 +133,14 @@ app.get('/api/items', (req, res) => {
   if (!distributorId) return res.status(401).json([]);
 
   const filtered = products.filter(p => p.distributor_id === distributorId);
+  res.json(filtered);
+});
+
+app.get('/api/accounts', (req, res) => {
+  const distributorId = req.session.distributor_id;
+  if (!distributorId) return res.status(401).json([]);
+
+  const filtered = accounts.filter(a => a.distributor_id === distributorId);
   res.json(filtered);
 });
 
