@@ -143,4 +143,12 @@ app.get('/api/accounts', (req, res) => {
   res.json(accounts);
 });
 
+app.get('/api/me', (req, res) => {
+  const distributorId = req.session.distributor_id;
+  let distributorName = 'Storefront';
+  if (distributorId === 'dist001') distributorName = 'Ocean Wave Foods';
+  if (distributorId === 'dist002') distributorName = 'Palma Cigars';
+  res.json({ distributorId, distributorName });
+});
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
