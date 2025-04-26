@@ -46,7 +46,7 @@ const categories = [
 ];
 
 // Routes
-app.post('/login', (req, res) => {
+app.post('api/login', (req, res) => {
   const { username, password } = req.body;
   const dbUser = db.getUserByUsername(username);
 
