@@ -41,7 +41,8 @@ const distributors = [
 ];
 
 const users = [
-  { username: 'admin', password: 'secret123', distributor_id: 'dist001' }
+  { username: 'OceanWaveAdmin', password: 'secret123', distributor_id: 'dist001' },
+  { username: 'PalmaCigarsAdmin', password: 'cigar123', distributor_id: 'dist002' }
 ];
 
 const accounts = [
@@ -54,17 +55,27 @@ const categories = [
   'Produce', 'Dairy', 'Bakery', 'Meat', 'Beverages', 'Snacks', 'Frozen', 'Pantry'
 ];
 
-const products = Array.from({ length: 150 }).map((_, i) => {
-  const category = categories[i % categories.length];
-  return {
-    id: `p${String(i + 1).padStart(3, '0')}`,
-    distributor_id: 'dist001',
-    name: `${category} Item ${i + 1}`,
-    sku: `${category.toUpperCase().slice(0, 3)}${i + 1}`,
-    unitPrice: Number((Math.random() * 15 + 1).toFixed(2)),
-    category
-  };
-});
+const products = [
+  // 150 Ocean Wave products
+  ...Array.from({ length: 150 }).map((_, i) => {
+    const category = categories[i % categories.length];
+    return {
+      id: `p${String(i + 1).padStart(3, '0')}`,
+      distributor_id: 'dist001',
+      name: `${category} Item ${i + 1}`,
+      sku: `${category.toUpperCase().slice(0, 3)}${i + 1}`,
+      unitPrice: Number((Math.random() * 15 + 1).toFixed(2)),
+      category
+    };
+  }),
+  // Palma Cigars products
+  { id: 'c001', distributor_id: 'dist002', name: 'Palma Classic Box', sku: 'PAL001', unitPrice: 89.99, category: 'Cigars' },
+  { id: 'c002', distributor_id: 'dist002', name: 'Palma Maduro Box', sku: 'PAL002', unitPrice: 92.99, category: 'Cigars' },
+  { id: 'c003', distributor_id: 'dist002', name: 'Palma Connecticut Box', sku: 'PAL003', unitPrice: 87.49, category: 'Cigars' },
+  { id: 'c004', distributor_id: 'dist002', name: 'Palma Toro Box', sku: 'PAL004', unitPrice: 94.99, category: 'Cigars' },
+  { id: 'c005', distributor_id: 'dist002', name: 'Palma Robusto Box', sku: 'PAL005', unitPrice: 91.50, category: 'Cigars' }
+];
+
 
 // Routes
 app.post('/login', (req, res) => {
@@ -77,8 +88,8 @@ app.post('/login', (req, res) => {
   req.session.account_id = null;
 
   req.session.save(() => {
-    console.log("🔐 Session created:", req.session);
-    res.json({ status: 'logged_in', distributorId: user.distributor_id });
+    console.log('🔐 Session created:', req.session);
+    res.json({ status: 'logged_in' });
   });
 });
 
@@ -94,9 +105,9 @@ app.post('/logout', (req, res) => {
 });
 
 app.get('/api/items', (req, res) => {
-  console.log('Session state:', req.session);
   const distributorId = req.session.distributor_id;
-  if (!distributorId) return res.status(401).json([]);  // Return empty array instead of error object
+  if (!distributorId) return res.status(401).json([]);
+
   const filtered = products.filter(p => p.distributor_id === distributorId);
   res.json(filtered);
 });
