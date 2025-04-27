@@ -6,6 +6,7 @@ const MemoryStore = require('memorystore')(session);
 require('dotenv').config();
 
 const app = express();
+app.use(express.json());
 const PORT = process.env.PORT || 4000;
 
 const corsOptions = {
@@ -46,7 +47,7 @@ const categories = [
 ];
 
 // Routes
-app.post('api/login', (req, res) => {
+app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const dbUser = db.getUserByUsername(username);
 
