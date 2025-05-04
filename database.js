@@ -5,43 +5,22 @@ const fs = require('fs');
 // Print current working directory for debugging
 console.log('Current working directory:', process.cwd());
 
-// Get the absolute path to the database file, handling Render deployment
-let dbPath;
-
-// Check if we're on Render (based on environment variables)
-if (process.env.RENDER) {
-  // On Render, use the full path where the repo is cloned
-  dbPath = '/opt/render/project/src/featherstorefront.db';
-} else {
-  // In local development, use relative path
-  dbPath = path.resolve(__dirname, 'featherstorefront.db');
-}
-
-console.log('Using database path:', dbPath);
+// Use a path that will work on both local and Render environments
+const dbPath = path.resolve(process.cwd(), 'featherstorefront.db');
+console.log('Database path:', dbPath);
 console.log('Database file exists:', fs.existsSync(dbPath));
 
 // Initialize database connection
 let db;
 try {
   db = new Database(dbPath);
-  console.log('Database connection established');
+  console.log('Database connection established successfully');
 } catch (err) {
   console.error('Failed to connect to database:', err.message);
-  
-  // Attempt an alternative path if the first one failed
-  const altPath = path.resolve(process.cwd(), 'featherstorefront.db');
-  console.log('Trying alternative path:', altPath);
-  
-  try {
-    db = new Database(altPath);
-    console.log('Database connection established with alternative path');
-  } catch (altErr) {
-    console.error('Failed to connect with alternative path:', altErr.message);
-    throw new Error('Could not connect to database');
-  }
+  throw new Error('Could not connect to database: ' + err.message);
 }
 
-// User functions - keep the original implementation
+// User functions
 function getUserByUsername(username) {
   try {
     console.log(`Looking up user: ${username}`);
@@ -51,7 +30,7 @@ function getUserByUsername(username) {
     return user;
   } catch (error) {
     console.error('Error in getUserByUsername:', error);
-    throw error; // Re-throw to see the full error in logs
+    return null;
   }
 }
 
@@ -77,8 +56,10 @@ function getAccountsByDistributor(distributorId) {
   }
 }
 
+// Export both the database object and the query functions
 module.exports = {
+  db, // Export the database connection directly
   getProductsByDistributor,
   getAccountsByDistributor,
   getUserByUsername
-};
+};W

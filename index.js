@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
-const db = require('./database');
+const database = require('./database');
 const session = require('express-session');
 const MemoryStore = require('memorystore')(session);
 require('dotenv').config();
+
+// Get the db object from the database module
+const db = database.db;
 
 const app = express();
 app.use(express.json());
@@ -49,16 +52,6 @@ console.log('Session configuration:', {
 
 app.use(session(sessionConfig));
 
-// Dummy data
-const distributors = [
-  { id: 'dist001', name: 'Sunshine Distributors' },
-  { id: 'dist002', name: 'Northwind Wholesalers' }
-];
- 
-const categories = [
-  'Produce', 'Dairy', 'Bakery', 'Meat', 'Beverages', 'Snacks', 'Frozen', 'Pantry'
-];
-
 // Diagnostic endpoint to check database status
 app.get('/api/diagnostic', (req, res) => {
   try {
@@ -80,12 +73,26 @@ app.get('/api/diagnostic', (req, res) => {
     const allUsers = db.prepare("SELECT id, username, distributor_id, distributor_name FROM users").all();
     console.log('All users:', JSON.stringify(allUsers));
     
+    // Get direct password for specific test accounts for debugging
+    const oceanwavePassword = db.prepare("SELECT password FROM users WHERE username = 'OceanWaveAdmin'").get();
+    const palmaPassword = db.prepare("SELECT password FROM users WHERE username = 'PalmaCigarsAdmin'").get();
+    
+    console.log('Test account passwords:', {
+      OceanWaveAdmin: oceanwavePassword ? oceanwavePassword.password : 'not found',
+      PalmaCigarsAdmin: palmaPassword ? palmaPassword.password : 'not found'
+    });
+    
     res.json({
       status: 'ok',
       databaseConnected: true,
       tables: tables.map(t => t.name),
       usersCount: usersCount.count,
-      sampleUser: sampleUser || null
+      sampleUser: sampleUser || null,
+      allUsers: allUsers,
+      testPasswords: {
+        OceanWaveAdmin: oceanwavePassword ? oceanwavePassword.password : 'not found',
+        PalmaCigarsAdmin: palmaPassword ? palmaPassword.password : 'not found'
+      }
     });
   } catch (error) {
     console.error('Diagnostic error:', error);
@@ -104,7 +111,7 @@ app.post('/api/login', (req, res) => {
   
   try {
     // Try to get user from database
-    const dbUser = db.getUserByUsername(username);
+    const dbUser = database.getUserByUsername(username);
     
     // Debug output for user lookup
     if (dbUser) {
@@ -216,8 +223,6 @@ app.get('/api/me', (req, res) => {
   console.log('Found distributor_id in session:', distributorId);
   
   let distributorName = req.session.distributorName || 'Storefront';
-  if (distributorId === 'dist001') distributorName = 'Ocean Wave Foods';
-  if (distributorId === 'dist002') distributorName = 'Palma Cigars';
   
   console.log('Responding with distributor info:', { distributorId, distributorName });
   res.json({ distributorId, distributorName });
@@ -235,7 +240,7 @@ app.get('/api/items', (req, res) => {
   }
   
   console.log('Getting products for distributor:', distributorId);
-  const products = db.getProductsByDistributor(distributorId);
+  const products = database.getProductsByDistributor(distributorId);
   console.log('Found products count:', products.length);
   
   res.json(products);
@@ -253,7 +258,7 @@ app.get('/api/accounts', (req, res) => {
   }
   
   console.log('Getting accounts for distributor:', distributorId);
-  const accounts = db.getAccountsByDistributor(distributorId);
+  const accounts = database.getAccountsByDistributor(distributorId);
   console.log('Found accounts count:', accounts.length);
   
   res.json(accounts);
