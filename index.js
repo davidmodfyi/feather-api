@@ -19,7 +19,7 @@ console.log('Environment:', process.env.NODE_ENV || 'development');
 const corsOptions = {
   origin: ['https://www.featherstorefront.com', 'https://featherstorefront.com'],
   credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type']
 };
 
@@ -147,13 +147,15 @@ app.post('/api/login', (req, res) => {
     // Authentication successful
     console.log('Authentication successful for user:', username);
     
-    // Set session data - now including user type
+    // Set session data - now including user_id
+    req.session.user_id = dbUser.id;
     req.session.distributor_id = dbUser.distributor_id;
     req.session.distributorName = dbUser.distributor_name;
     req.session.userType = dbUser.type || 'Admin'; // Default to Admin if not set
     req.session.accountId = dbUser.account_id; // Include account ID if available
     
     console.log('Setting session data:', {
+      user_id: dbUser.id,
       distributor_id: dbUser.distributor_id,
       distributorName: dbUser.distributor_name,
       userType: dbUser.type || 'Admin',
@@ -174,6 +176,7 @@ app.post('/api/login', (req, res) => {
       
       res.json({ 
         status: 'logged_in',
+        user_id: dbUser.id,
         distributorName: dbUser.distributor_name,
         userType: dbUser.type || 'Admin'
       });
@@ -213,7 +216,8 @@ app.get('/api/session-check', (req, res) => {
     sessionExists: !!req.session.distributor_id,
     distributorId: req.session.distributor_id || 'none',
     distributorName: req.session.distributorName || 'none',
-    userType: req.session.userType || 'Admin'
+    userType: req.session.userType || 'Admin',
+    userId: req.session.user_id || 'none'
   });
 });
 
@@ -233,19 +237,22 @@ app.get('/api/me', (req, res) => {
   const distributorName = req.session.distributorName || 'Storefront';
   const userType = req.session.userType || 'Admin';
   const accountId = req.session.accountId || null;
+  const userId = req.session.user_id || null;
   
   console.log('Responding with user info:', { 
     distributorId,
     distributorName,
     userType,
-    accountId
+    accountId,
+    userId
   });
   
   res.json({ 
     distributorId, 
     distributorName,
     userType,
-    accountId
+    accountId,
+    userId
   });
 });
 
@@ -283,6 +290,194 @@ app.get('/api/accounts', (req, res) => {
   console.log('Found accounts count:', accounts.length);
   
   res.json(accounts);
+});
+
+// CART ENDPOINTS
+
+// Get cart items for current user
+app.get('/api/cart', (req, res) => {
+  console.log('Cart request');
+  console.log('Session data:', req.session);
+  
+  // Check if user is logged in
+  if (!req.session.user_id) {
+    console.log('No user_id in session, returning 401');
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  try {
+    // Get cart items with product details
+    const cartItems = db.prepare(`
+      SELECT ci.id as cart_item_id, ci.quantity, p.*
+      FROM cart_items ci
+      JOIN products p ON ci.product_id = p.id
+      WHERE ci.user_id = ?
+    `).all(req.session.user_id);
+    
+    console.log(`Found ${cartItems.length} cart items for user ${req.session.user_id}`);
+    res.json(cartItems);
+  } catch (error) {
+    console.error('Error fetching cart items:', error);
+    res.status(500).json({ error: 'Error fetching cart items' });
+  }
+});
+
+// Add item to cart
+app.post('/api/cart', (req, res) => {
+  console.log('Add to cart request');
+  console.log('Session data:', req.session);
+  
+  // Check if user is logged in
+  if (!req.session.user_id) {
+    console.log('No user_id in session, returning 401');
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  const { product_id, quantity } = req.body;
+  
+  if (!product_id || !quantity || quantity < 1) {
+    return res.status(400).json({ error: 'Invalid product_id or quantity' });
+  }
+  
+  try {
+    // Check if item is already in cart
+    const existingItem = db.prepare(`
+      SELECT * FROM cart_items 
+      WHERE user_id = ? AND product_id = ?
+    `).get(req.session.user_id, product_id);
+    
+    if (existingItem) {
+      // Update quantity
+      db.prepare(`
+        UPDATE cart_items
+        SET quantity = ?
+        WHERE user_id = ? AND product_id = ?
+      `).run(quantity, req.session.user_id, product_id);
+      
+      console.log(`Updated cart item for user ${req.session.user_id}, product ${product_id}, quantity ${quantity}`);
+    } else {
+      // Insert new item
+      db.prepare(`
+        INSERT INTO cart_items (user_id, product_id, quantity)
+        VALUES (?, ?, ?)
+      `).run(req.session.user_id, product_id, quantity);
+      
+      console.log(`Added new cart item for user ${req.session.user_id}, product ${product_id}, quantity ${quantity}`);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error adding item to cart:', error);
+    res.status(500).json({ error: 'Error adding item to cart' });
+  }
+});
+
+// Update cart item quantity
+app.put('/api/cart/:itemId', (req, res) => {
+  console.log('Update cart item request');
+  console.log('Session data:', req.session);
+  
+  // Check if user is logged in
+  if (!req.session.user_id) {
+    console.log('No user_id in session, returning 401');
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  const { itemId } = req.params;
+  const { quantity } = req.body;
+  
+  if (!quantity || quantity < 1) {
+    return res.status(400).json({ error: 'Invalid quantity' });
+  }
+  
+  try {
+    // Verify item belongs to user
+    const item = db.prepare(`
+      SELECT * FROM cart_items 
+      WHERE id = ? AND user_id = ?
+    `).get(itemId, req.session.user_id);
+    
+    if (!item) {
+      return res.status(404).json({ error: 'Cart item not found' });
+    }
+    
+    // Update quantity
+    db.prepare(`
+      UPDATE cart_items
+      SET quantity = ?
+      WHERE id = ?
+    `).run(quantity, itemId);
+    
+    console.log(`Updated cart item ${itemId} for user ${req.session.user_id}, new quantity ${quantity}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating cart item:', error);
+    res.status(500).json({ error: 'Error updating cart item' });
+  }
+});
+
+// Remove item from cart
+app.delete('/api/cart/:itemId', (req, res) => {
+  console.log('Remove cart item request');
+  console.log('Session data:', req.session);
+  
+  // Check if user is logged in
+  if (!req.session.user_id) {
+    console.log('No user_id in session, returning 401');
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  const { itemId } = req.params;
+  
+  try {
+    // Verify item belongs to user
+    const item = db.prepare(`
+      SELECT * FROM cart_items 
+      WHERE id = ? AND user_id = ?
+    `).get(itemId, req.session.user_id);
+    
+    if (!item) {
+      return res.status(404).json({ error: 'Cart item not found' });
+    }
+    
+    // Delete item
+    db.prepare(`
+      DELETE FROM cart_items
+      WHERE id = ?
+    `).run(itemId);
+    
+    console.log(`Removed cart item ${itemId} for user ${req.session.user_id}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing cart item:', error);
+    res.status(500).json({ error: 'Error removing cart item' });
+  }
+});
+
+// Clear entire cart
+app.delete('/api/cart', (req, res) => {
+  console.log('Clear cart request');
+  console.log('Session data:', req.session);
+  
+  // Check if user is logged in
+  if (!req.session.user_id) {
+    console.log('No user_id in session, returning 401');
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  try {
+    // Delete all cart items for user
+    db.prepare(`
+      DELETE FROM cart_items
+      WHERE user_id = ?
+    `).run(req.session.user_id);
+    
+    console.log(`Cleared cart for user ${req.session.user_id}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error clearing cart:', error);
+    res.status(500).json({ error: 'Error clearing cart' });
+  }
 });
 
 // Start the server
