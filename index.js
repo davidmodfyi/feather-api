@@ -66,11 +66,11 @@ app.get('/api/diagnostic', (req, res) => {
     console.log('Users count:', usersCount.count);
     
     // Get sample user (without password)
-    const sampleUser = db.prepare("SELECT id, username, distributor_id, distributor_name FROM users LIMIT 1").get();
+    const sampleUser = db.prepare("SELECT id, username, distributor_id, distributor_name, type, account_id FROM users LIMIT 1").get();
     console.log('Sample user:', sampleUser || 'None found');
     
     // Get all users for debugging (without passwords)
-    const allUsers = db.prepare("SELECT id, username, distributor_id, distributor_name FROM users").all();
+    const allUsers = db.prepare("SELECT id, username, distributor_id, distributor_name, type, account_id FROM users").all();
     console.log('All users:', JSON.stringify(allUsers));
     
     // Get direct password for specific test accounts for debugging
@@ -120,6 +120,8 @@ app.post('/api/login', (req, res) => {
         username: dbUser.username,
         distributor_id: dbUser.distributor_id,
         distributor_name: dbUser.distributor_name,
+        type: dbUser.type || 'Admin', // Default to Admin if not set
+        account_id: dbUser.account_id,
         hasPassword: !!dbUser.password,
         passwordLength: dbUser.password ? dbUser.password.length : 0
       });
@@ -145,13 +147,17 @@ app.post('/api/login', (req, res) => {
     // Authentication successful
     console.log('Authentication successful for user:', username);
     
-    // Set session data
+    // Set session data - now including user type
     req.session.distributor_id = dbUser.distributor_id;
     req.session.distributorName = dbUser.distributor_name;
+    req.session.userType = dbUser.type || 'Admin'; // Default to Admin if not set
+    req.session.accountId = dbUser.account_id; // Include account ID if available
     
     console.log('Setting session data:', {
       distributor_id: dbUser.distributor_id,
-      distributorName: dbUser.distributor_name
+      distributorName: dbUser.distributor_name,
+      userType: dbUser.type || 'Admin',
+      accountId: dbUser.account_id
     });
     
     // Save session and respond
@@ -168,7 +174,8 @@ app.post('/api/login', (req, res) => {
       
       res.json({ 
         status: 'logged_in',
-        distributorName: dbUser.distributor_name 
+        distributorName: dbUser.distributor_name,
+        userType: dbUser.type || 'Admin'
       });
     });
   } catch (error) {
@@ -205,7 +212,8 @@ app.get('/api/session-check', (req, res) => {
   res.json({
     sessionExists: !!req.session.distributor_id,
     distributorId: req.session.distributor_id || 'none',
-    distributorName: req.session.distributorName || 'none'
+    distributorName: req.session.distributorName || 'none',
+    userType: req.session.userType || 'Admin'
   });
 });
 
@@ -222,10 +230,23 @@ app.get('/api/me', (req, res) => {
   
   console.log('Found distributor_id in session:', distributorId);
   
-  let distributorName = req.session.distributorName || 'Storefront';
+  const distributorName = req.session.distributorName || 'Storefront';
+  const userType = req.session.userType || 'Admin';
+  const accountId = req.session.accountId || null;
   
-  console.log('Responding with distributor info:', { distributorId, distributorName });
-  res.json({ distributorId, distributorName });
+  console.log('Responding with user info:', { 
+    distributorId,
+    distributorName,
+    userType,
+    accountId
+  });
+  
+  res.json({ 
+    distributorId, 
+    distributorName,
+    userType,
+    accountId
+  });
 });
 
 // Items endpoint
