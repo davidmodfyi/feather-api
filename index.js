@@ -9,6 +9,10 @@ const app = express();
 app.use(express.json());
 const PORT = process.env.PORT || 4000;
 
+// Log the application startup for debugging
+console.log('Starting Feather API server...');
+console.log('Environment:', process.env.NODE_ENV || 'development');
+
 const corsOptions = {
   origin: ['https://www.featherstorefront.com', 'https://featherstorefront.com'],
   credentials: true,
@@ -23,7 +27,9 @@ app.use(express.json());
 
 app.set('trust proxy', 1); 
 
-app.use(session({
+// Session configuration with detailed logging
+console.log('Configuring session middleware...');
+const sessionConfig = {
   store: new MemoryStore({ checkPeriod: 86400000 }), // clean-up every 24h
   name: 'feather.sid',
   secret: process.env.SESSION_SECRET || 'feathersecret',
@@ -34,7 +40,14 @@ app.use(session({
     httpOnly: true,
     sameSite: 'none'
   }
-}));
+};
+console.log('Session configuration:', {
+  secret: sessionConfig.secret ? '[present]' : '[missing]',
+  cookieSecure: sessionConfig.cookie.secure,
+  cookieSameSite: sessionConfig.cookie.sameSite
+});
+
+app.use(session(sessionConfig));
 
 // Dummy data
 const distributors = [
@@ -46,27 +59,75 @@ const categories = [
   'Produce', 'Dairy', 'Bakery', 'Meat', 'Beverages', 'Snacks', 'Frozen', 'Pantry'
 ];
 
-// Routes
+// Diagnostic endpoint to check database status
+app.get('/api/diagnostic', (req, res) => {
+  try {
+    console.log('Running diagnostic...');
+    
+    // Check connection and tables
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+    console.log('Tables in database:', tables.map(t => t.name).join(', '));
+    
+    // Get users count
+    const usersCount = db.prepare("SELECT COUNT(*) as count FROM users").get();
+    console.log('Users count:', usersCount.count);
+    
+    // Get sample user (without password)
+    const sampleUser = db.prepare("SELECT id, username, distributor_id, distributor_name FROM users LIMIT 1").get();
+    console.log('Sample user:', sampleUser || 'None found');
+    
+    // Get all users for debugging (without passwords)
+    const allUsers = db.prepare("SELECT id, username, distributor_id, distributor_name FROM users").all();
+    console.log('All users:', JSON.stringify(allUsers));
+    
+    res.json({
+      status: 'ok',
+      databaseConnected: true,
+      tables: tables.map(t => t.name),
+      usersCount: usersCount.count,
+      sampleUser: sampleUser || null
+    });
+  } catch (error) {
+    console.error('Diagnostic error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// Login route with detailed debugging
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
-  console.log('Login attempt:', username, 'with password:', password);
+  console.log('Login attempt:', { username, passwordLength: password ? password.length : 0 });
   
   try {
-    // Get user from database
+    // Try to get user from database
     const dbUser = db.getUserByUsername(username);
-    console.log('User from DB:', dbUser ? JSON.stringify(dbUser) : 'Not found');
     
-    // If user not found or password doesn't match
-    if (!dbUser) {
-      console.log('User not found in database');
+    // Debug output for user lookup
+    if (dbUser) {
+      console.log('User found:', {
+        id: dbUser.id,
+        username: dbUser.username,
+        distributor_id: dbUser.distributor_id,
+        distributor_name: dbUser.distributor_name,
+        hasPassword: !!dbUser.password,
+        passwordLength: dbUser.password ? dbUser.password.length : 0
+      });
+    } else {
+      console.log('No user found with username:', username);
       return res.status(401).json({ error: 'Invalid username or password' });
     }
     
-    // Explicit password comparison with debug logging
-    console.log('Comparing passwords:', {
-      provided: password,
-      stored: dbUser.password,
-      match: password === dbUser.password
+    // Password comparison with detailed logging
+    console.log('Password comparison:', {
+      providedPassword: password,
+      storedPassword: dbUser.password,
+      match: password === dbUser.password,
+      providedLength: password ? password.length : 0,
+      storedLength: dbUser.password ? dbUser.password.length : 0
     });
     
     if (password !== dbUser.password) {
@@ -75,17 +136,29 @@ app.post('/api/login', (req, res) => {
     }
     
     // Authentication successful
+    console.log('Authentication successful for user:', username);
+    
+    // Set session data
     req.session.distributor_id = dbUser.distributor_id;
     req.session.distributorName = dbUser.distributor_name;
     
-    console.log('Login successful for:', username);
-    console.log('Setting session:', {
+    console.log('Setting session data:', {
       distributor_id: dbUser.distributor_id,
       distributorName: dbUser.distributor_name
     });
     
-    req.session.save(() => {
-      console.log('Session saved:', req.session);
+    // Save session and respond
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.status(500).json({ error: 'Error saving session' });
+      }
+      
+      console.log('Session saved successfully:', {
+        id: req.session.id,
+        cookie: req.session.cookie ? 'present' : 'missing'
+      });
+      
       res.json({ 
         status: 'logged_in',
         distributorName: dbUser.distributor_name 
@@ -97,44 +170,31 @@ app.post('/api/login', (req, res) => {
   }
 });
 
+// Logout route
 app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => {
+  console.log('Logout request received');
+  
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Error destroying session:', err);
+    }
+    
     res.clearCookie('feather.sid', {
       path: '/',
       sameSite: 'none',
       secure: true
     });
+    
+    console.log('Session destroyed and cookie cleared');
     res.send({ status: 'logged_out' });
   });
 });
 
-app.get('/api/items', (req, res) => {
-  const distributorId = req.session.distributor_id;
-  if (!distributorId) return res.status(401).json([]);
-  const products = db.getProductsByDistributor(distributorId);
-  res.json(products);
-});
-
-app.get('/api/accounts', (req, res) => {
-  const distributorId = req.session.distributor_id;
-  if (!distributorId) return res.status(401).json([]);
-  const accounts = db.getAccountsByDistributor(distributorId);
-  res.json(accounts);
-});
-
-app.get('/api/me', (req, res) => {
-  const distributorId = req.session.distributor_id;
-  if (!distributorId) return res.status(401).json({ error: 'Not authenticated' });
-  
-  let distributorName = 'Storefront';
-  if (distributorId === 'dist001') distributorName = 'Ocean Wave Foods';
-  if (distributorId === 'dist002') distributorName = 'Palma Cigars';
-  
-  res.json({ distributorId, distributorName });
-});
-
-// Add debug endpoint to check session status
+// Session check endpoint
 app.get('/api/session-check', (req, res) => {
+  console.log('Session check request');
+  console.log('Session data:', req.session);
+  
   res.json({
     sessionExists: !!req.session.distributor_id,
     distributorId: req.session.distributor_id || 'none',
@@ -142,4 +202,65 @@ app.get('/api/session-check', (req, res) => {
   });
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// User info endpoint
+app.get('/api/me', (req, res) => {
+  console.log('User info request');
+  console.log('Session data:', req.session);
+  
+  const distributorId = req.session.distributor_id;
+  if (!distributorId) {
+    console.log('No distributor_id in session, returning 401');
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  console.log('Found distributor_id in session:', distributorId);
+  
+  let distributorName = req.session.distributorName || 'Storefront';
+  if (distributorId === 'dist001') distributorName = 'Ocean Wave Foods';
+  if (distributorId === 'dist002') distributorName = 'Palma Cigars';
+  
+  console.log('Responding with distributor info:', { distributorId, distributorName });
+  res.json({ distributorId, distributorName });
+});
+
+// Items endpoint
+app.get('/api/items', (req, res) => {
+  console.log('Items request');
+  console.log('Session data:', req.session);
+  
+  const distributorId = req.session.distributor_id;
+  if (!distributorId) {
+    console.log('No distributor_id in session, returning empty array');
+    return res.status(401).json([]);
+  }
+  
+  console.log('Getting products for distributor:', distributorId);
+  const products = db.getProductsByDistributor(distributorId);
+  console.log('Found products count:', products.length);
+  
+  res.json(products);
+});
+
+// Accounts endpoint
+app.get('/api/accounts', (req, res) => {
+  console.log('Accounts request');
+  console.log('Session data:', req.session);
+  
+  const distributorId = req.session.distributor_id;
+  if (!distributorId) {
+    console.log('No distributor_id in session, returning empty array');
+    return res.status(401).json([]);
+  }
+  
+  console.log('Getting accounts for distributor:', distributorId);
+  const accounts = db.getAccountsByDistributor(distributorId);
+  console.log('Found accounts count:', accounts.length);
+  
+  res.json(accounts);
+});
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`API endpoints available at http://localhost:${PORT}`);
+});
