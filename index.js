@@ -10,7 +10,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 4000;
 
 const corsOptions = {
-  origin: 'https://www.featherstorefront.com',
+  origin: ['https://www.featherstorefront.com', 'https://featherstorefront.com'],
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
@@ -30,7 +30,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: true,            // ok for dev
+    secure: true,
     httpOnly: true,
     sameSite: 'none'
   }
@@ -47,8 +47,11 @@ const categories = [
 ];
 
 // Routes
-app.post('/login', (req, res) => {
+// Change this to match frontend URL paths
+app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
+  console.log('Login attempt:', username);
+  
   const dbUser = db.getUserByUsername(username);
 
   if (!dbUser || dbUser.password !== password) {
@@ -60,11 +63,14 @@ app.post('/login', (req, res) => {
 
   req.session.save(() => {
     console.log('🔐 Session saved:', req.session);
-    res.send({ status: 'logged_in' });
+    res.json({ 
+      status: 'logged_in',
+      distributorName: dbUser.distributor_name 
+    });
   });
 });
 
-
+// Keep this route - frontend already uses it
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('feather.sid', {
@@ -92,10 +98,22 @@ app.get('/api/accounts', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   const distributorId = req.session.distributor_id;
+  if (!distributorId) return res.status(401).json({ error: 'Not authenticated' });
+  
   let distributorName = 'Storefront';
   if (distributorId === 'dist001') distributorName = 'Ocean Wave Foods';
   if (distributorId === 'dist002') distributorName = 'Palma Cigars';
+  
   res.json({ distributorId, distributorName });
+});
+
+// Add debug endpoint to check session status
+app.get('/api/session-check', (req, res) => {
+  res.json({
+    sessionExists: !!req.session.distributor_id,
+    distributorId: req.session.distributor_id || 'none',
+    distributorName: req.session.distributorName || 'none'
+  });
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
