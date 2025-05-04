@@ -55,7 +55,7 @@ app.post('/api/login', (req, res) => {
   const dbUser = db.getUserByUsername(username);
 
   if (!dbUser || dbUser.password !== password) {
-    return res.status(401).send('Invalid username or password');
+    return res.status(401).json({ error: 'Invalid username or password' });
   }
 
   req.session.distributor_id = dbUser.distributor_id;
