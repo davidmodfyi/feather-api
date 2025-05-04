@@ -1,3 +1,4 @@
+// Simplified database.js fix - just focusing on connection
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
@@ -5,63 +6,51 @@ const fs = require('fs');
 // Print current working directory for debugging
 console.log('Current working directory:', process.cwd());
 
-// Use absolute path to the database file
-const dbPath = path.resolve(process.cwd(), 'featherstorefront.db');
-console.log('Database path:', dbPath);
+// Try multiple potential database paths
+const possiblePaths = [
+  path.resolve(process.cwd(), 'featherstorefront.db'),
+  path.resolve(process.cwd(), '../featherstorefront.db'),
+  path.resolve('/opt/render/project/src/featherstorefront.db')
+];
 
-// Check if database file exists
-const dbExists = fs.existsSync(dbPath);
-console.log('Database file exists:', dbExists);
-
-// Initialize database connection
 let db;
-try {
-  db = new Database(dbPath);
-  console.log('Database connection established');
-} catch (err) {
-  console.error('Failed to connect to database:', err.message);
-  // Initialize with an in-memory database as fallback
-  db = new Database(':memory:');
-  console.log('Using in-memory database as fallback');
+let dbFound = false;
+
+// Try each path until we find the database
+for (const dbPath of possiblePaths) {
+  console.log('Trying database path:', dbPath);
   
-  // Create users table and add test users
-  db.exec(`
-    CREATE TABLE users (
-      id INTEGER PRIMARY KEY,
-      username TEXT UNIQUE,
-      password TEXT,
-      distributor_id TEXT,
-      distributor_name TEXT
-    );
-    
-    INSERT INTO users (username, password, distributor_id, distributor_name)
-    VALUES 
-      ('OceanWaveAdmin', 'secret123', 'dist001', 'Ocean Wave Foods'),
-      ('PalmaCigarsAdmin', 'secret123', 'dist002', 'Palma Cigars');
-  `);
+  if (fs.existsSync(dbPath)) {
+    console.log('Database file found at:', dbPath);
+    try {
+      db = new Database(dbPath);
+      console.log('Successfully connected to database');
+      dbFound = true;
+      break;
+    } catch (err) {
+      console.error(`Failed to connect to database at ${dbPath}:`, err.message);
+    }
+  } else {
+    console.log('Database file not found at:', dbPath);
+  }
 }
 
-// User functions
+if (!dbFound) {
+  console.error('Could not find or connect to database file in any expected location');
+  throw new Error('Database connection failed');
+}
+
+// User functions - no change to these existing functions
 function getUserByUsername(username) {
   try {
     console.log(`Looking up user: ${username}`);
-    
-    // First try case-sensitive match
     const stmt = db.prepare('SELECT * FROM users WHERE username = ?');
-    let user = stmt.get(username);
-    
-    if (!user) {
-      // If not found, try case-insensitive match
-      console.log('Case-sensitive match failed, trying case-insensitive');
-      const insensitiveStmt = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)');
-      user = insensitiveStmt.get(username);
-    }
-    
+    const user = stmt.get(username);
     console.log('User lookup result:', user || 'Not found');
     return user;
   } catch (error) {
     console.error('Error in getUserByUsername:', error);
-    return null;
+    throw error; // Re-throw to see the full error in logs
   }
 }
 
