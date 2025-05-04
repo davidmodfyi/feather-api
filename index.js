@@ -47,30 +47,56 @@ const categories = [
 ];
 
 // Routes
-// Change this to match frontend URL paths
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
-  console.log('Login attempt:', username);
+  console.log('Login attempt:', username, 'with password:', password);
   
-  const dbUser = db.getUserByUsername(username);
-
-  if (!dbUser || dbUser.password !== password) {
-    return res.status(401).json({ error: 'Invalid username or password' });
-  }
-
-  req.session.distributor_id = dbUser.distributor_id;
-  req.session.distributorName = dbUser.distributor_name;
-
-  req.session.save(() => {
-    console.log('🔐 Session saved:', req.session);
-    res.json({ 
-      status: 'logged_in',
-      distributorName: dbUser.distributor_name 
+  try {
+    // Get user from database
+    const dbUser = db.getUserByUsername(username);
+    console.log('User from DB:', dbUser ? JSON.stringify(dbUser) : 'Not found');
+    
+    // If user not found or password doesn't match
+    if (!dbUser) {
+      console.log('User not found in database');
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+    
+    // Explicit password comparison with debug logging
+    console.log('Comparing passwords:', {
+      provided: password,
+      stored: dbUser.password,
+      match: password === dbUser.password
     });
-  });
+    
+    if (password !== dbUser.password) {
+      console.log('Password mismatch');
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+    
+    // Authentication successful
+    req.session.distributor_id = dbUser.distributor_id;
+    req.session.distributorName = dbUser.distributor_name;
+    
+    console.log('Login successful for:', username);
+    console.log('Setting session:', {
+      distributor_id: dbUser.distributor_id,
+      distributorName: dbUser.distributor_name
+    });
+    
+    req.session.save(() => {
+      console.log('Session saved:', req.session);
+      res.json({ 
+        status: 'logged_in',
+        distributorName: dbUser.distributor_name 
+      });
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Server error during login' });
+  }
 });
 
-// Keep this route - frontend already uses it
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('feather.sid', {
