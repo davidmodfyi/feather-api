@@ -221,6 +221,82 @@ app.get('/api/session-check', (req, res) => {
   });
 });
 
+app.get('/api/connected-accounts', (req, res) => {
+  console.log('Connected accounts request');
+  
+  // Check if user is logged in
+  if (!req.session.distributor_id) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  try {
+    // Get all users with account_id for this distributor
+    const connectedAccounts = db.prepare(`
+      SELECT account_id FROM users 
+      WHERE distributor_id = ? AND account_id IS NOT NULL
+    `).all(req.session.distributor_id);
+    
+    res.json(connectedAccounts);
+  } catch (error) {
+    console.error('Error fetching connected accounts:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Connect account for ordering
+app.post('/api/connect-account', (req, res) => {
+  console.log('Connect account request');
+  
+  // Check if user is logged in and is Admin
+  if (!req.session.distributor_id || req.session.userType !== 'Admin') {
+    return res.status(401).json({ error: 'Not authorized' });
+  }
+  
+  const { accountId, email } = req.body;
+  
+  if (!accountId || !email) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  try {
+    // Check if user already exists with this email
+    const existingUser = db.prepare(`
+      SELECT * FROM users WHERE username = ?
+    `).get(email);
+    
+    if (existingUser) {
+      return res.status(400).json({ error: 'User already exists with this email' });
+    }
+    
+    // Generate random 6-digit password
+    const password = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Insert new user
+    db.prepare(`
+      INSERT INTO users (username, password, distributor_id, distributor_name, type, account_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      email,
+      password,
+      req.session.distributor_id,
+      req.session.distributorName,
+      'Customer',
+      accountId
+    );
+    
+    console.log(`Created user for account ${accountId} with email ${email}`);
+    
+    // Return success with password so admin can provide it to customer
+    res.json({ 
+      success: true,
+      password
+    });
+  } catch (error) {
+    console.error('Error connecting account:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // User info endpoint
 app.get('/api/me', (req, res) => {
   console.log('User info request');
