@@ -243,6 +243,142 @@ app.get('/api/connected-accounts', (req, res) => {
   }
 });
 
+
+// Handle order submission and email generation
+app.post('/api/submit-order', async (req, res) => {
+  console.log('Order submission request');
+  
+  // Check if user is logged in
+  if (!req.session.user_id) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  try {
+    const { items } = req.body;
+    
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'No items in order' });
+    }
+    
+    // Get user info for the order
+    const user = db.prepare(`
+      SELECT users.*, accounts.name as customer_name 
+      FROM users 
+      LEFT JOIN accounts ON users.account_id = accounts.id
+      WHERE users.id = ?
+    `).get(req.session.user_id);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Generate CSV content
+    const orderDate = new Date().toISOString().split('T')[0];
+    let csvContent = 'Order Date,Customer ID,Customer Name,Customer Email,Product SKU,Product Name,Quantity,Unit Price,Total\n';
+    
+    items.forEach(item => {
+      const lineTotal = item.quantity * item.unitPrice;
+      csvContent += `${orderDate},${user.account_id || 'N/A'},${user.customer_name || user.username},${user.username},${item.sku},"${item.name}",${item.quantity},${item.unitPrice.toFixed(2)},${lineTotal.toFixed(2)}\n`;
+    });
+    
+    // Calculate order total
+    const orderTotal = items.reduce((total, item) => {
+      return total + (item.quantity * item.unitPrice);
+    }, 0);
+    
+    // Add total row
+    csvContent += `${orderDate},${user.account_id || 'N/A'},${user.customer_name || user.username},${user.username},"","Order Total","","",${orderTotal.toFixed(2)}\n`;
+    
+    // Save the order in the database
+    const orderResult = db.prepare(`
+      INSERT INTO orders (user_id, account_id, order_date, total_amount, status)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      req.session.user_id,
+      user.account_id,
+      orderDate,
+      orderTotal,
+      'Submitted'
+    );
+    
+    const orderId = orderResult.lastInsertRowid;
+    
+    // Save order items
+    const insertOrderItem = db.prepare(`
+      INSERT INTO order_items (order_id, product_id, quantity, unit_price)
+      VALUES (?, ?, ?, ?)
+    `);
+    
+    items.forEach(item => {
+      insertOrderItem.run(
+        orderId,
+        item.id,
+        item.quantity,
+        item.unitPrice
+      );
+    });
+    
+    // Create a temporary file for the CSV
+    const fs = require('fs');
+    const path = require('path');
+    const csvFilePath = path.join(__dirname, `order_${orderId}_${orderDate}.csv`);
+    
+    fs.writeFileSync(csvFilePath, csvContent);
+    
+    // Send email with CSV attachment
+    // Note: This requires nodemailer or similar package to be installed
+    // For this example, I'll use nodemailer
+    const nodemailer = require('nodemailer');
+    
+    // Create SMTP service account
+	const transporter = nodemailer.createTransport({
+	  service: 'gmail',
+	  auth: {
+		user: 'david@mod.fyi',
+		pass: process.env.GMAIL_APP_PASSWORD 
+	  }
+	});
+    
+    // Send mail with defined transport object
+    const info = await transporter.sendMail({
+      from: '"Feather Storefront" <orders@featherstorefront.com>',
+      to: "david@mod.fyi", // Hard-coded email as requested
+      subject: `New Order #${orderId} - ${user.customer_name || user.username}`,
+      text: `A new order has been submitted.\n\nOrder #: ${orderId}\nCustomer: ${user.customer_name || user.username}\nDate: ${orderDate}\nTotal: $${orderTotal.toFixed(2)}\n\nPlease see attached CSV for order details.`,
+      html: `<h2>New Order Received</h2>
+             <p><strong>Order #:</strong> ${orderId}</p>
+             <p><strong>Customer:</strong> ${user.customer_name || user.username}</p>
+             <p><strong>Date:</strong> ${orderDate}</p>
+             <p><strong>Total:</strong> $${orderTotal.toFixed(2)}</p>
+             <p>Please see attached CSV for order details.</p>`,
+      attachments: [
+        {
+          filename: `order_${orderId}_${orderDate}.csv`,
+          path: csvFilePath
+        }
+      ]
+    });
+    
+    console.log('Email sent:', info.messageId);
+    
+    // Delete temporary CSV file
+    fs.unlinkSync(csvFilePath);
+    
+    // Clear the user's cart
+    db.prepare(`DELETE FROM cart_items WHERE user_id = ?`).run(req.session.user_id);
+    
+    res.json({ 
+      success: true, 
+      orderId: orderId,
+      message: 'Order submitted successfully'
+    });
+  } catch (error) {
+    console.error('Error processing order:', error);
+    res.status(500).json({ error: 'Error processing order' });
+  }
+});
+
+
 // Connect account for ordering
 app.post('/api/connect-account', (req, res) => {
   console.log('Connect account request');
