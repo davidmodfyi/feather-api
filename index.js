@@ -84,7 +84,7 @@ app.options('*', cors(corsOptions)); // <-- handle preflight
 app.use(express.json());
 
 app.set('trust proxy', 1); 
-
+app.use(express.static(path.join(__dirname, 'public')));
 // Session configuration with detailed logging
 console.log('Configuring session middleware...');
 const sessionConfig = {
@@ -468,7 +468,7 @@ app.delete('/api/branding/logo', (req, res) => {
 });
 
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
-app.use(express.static(path.join(__dirname, 'public')));
+
 
 // Login route with detailed debugging
 app.post('/api/login', (req, res) => {
