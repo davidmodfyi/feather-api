@@ -3,6 +3,10 @@ const cors = require('cors');
 const database = require('./database');
 const session = require('express-session');
 const MemoryStore = require('memorystore')(session);
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
 require('dotenv').config();
 
 // Get the db object from the database module
@@ -22,6 +26,38 @@ const corsOptions = {
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type']
 };
+
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 1024 * 1024 // 1MB
+  },
+  fileFilter: function(req, file, cb) {
+    // Accept images only
+    if (!file.originalname.match(/\.(jpg|jpeg|png|gif|svg)$/)) {
+      return cb(new Error('Only image files are allowed!'), false);
+    }
+    cb(null, true);
+  }
+});
+
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'logo-' + req.session.distributor_id + '-' + uniqueSuffix + ext);
+  }
+});
+
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // <-- handle preflight
@@ -103,6 +139,122 @@ app.get('/api/diagnostic', (req, res) => {
     });
   }
 });
+
+app.get('/api/branding/logo', (req, res) => {
+  console.log('Logo request');
+  
+  if (!req.session.distributor_id) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  try {
+    // Check if distributor has a logo
+    const distributor = db.prepare(`
+      SELECT logo_path FROM distributors WHERE id = ?
+    `).get(req.session.distributor_id);
+    
+    if (!distributor || !distributor.logo_path) {
+      return res.json({ logo: null });
+    }
+    
+    // Check if file exists
+    const logoPath = distributor.logo_path;
+    const absolutePath = path.join(__dirname, logoPath);
+    
+    if (!fs.existsSync(absolutePath)) {
+      return res.json({ logo: null });
+    }
+    
+    // Return logo path
+    const logoUrl = '/uploads/' + path.basename(logoPath);
+    res.json({ logo: logoUrl });
+  } catch (error) {
+    console.error('Error getting logo:', error);
+    res.status(500).json({ error: 'Error getting logo' });
+  }
+});
+
+app.post('/api/branding/logo', upload.single('logo'), (req, res) => {
+  console.log('Logo upload request');
+  
+  if (!req.session.distributor_id) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+  
+  try {
+    // Delete old logo if exists
+    const distributor = db.prepare(`
+      SELECT logo_path FROM distributors WHERE id = ?
+    `).get(req.session.distributor_id);
+    
+    if (distributor && distributor.logo_path) {
+      const oldLogoPath = path.join(__dirname, distributor.logo_path);
+      if (fs.existsSync(oldLogoPath)) {
+        fs.unlinkSync(oldLogoPath);
+      }
+    }
+    
+    // Update distributor with new logo path
+    const relativeFilePath = path.join('uploads', path.basename(req.file.path));
+    
+    db.prepare(`
+      UPDATE distributors 
+      SET logo_path = ? 
+      WHERE id = ?
+    `).run(relativeFilePath, req.session.distributor_id);
+    
+    // Return the new logo path
+    const logoUrl = '/uploads/' + path.basename(req.file.path);
+    res.json({ success: true, logo: logoUrl });
+  } catch (error) {
+    console.error('Error uploading logo:', error);
+    res.status(500).json({ error: 'Error uploading logo' });
+  }
+});
+
+// Delete logo
+app.delete('/api/branding/logo', (req, res) => {
+  console.log('Logo delete request');
+  
+  if (!req.session.distributor_id) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  try {
+    // Get current logo path
+    const distributor = db.prepare(`
+      SELECT logo_path FROM distributors WHERE id = ?
+    `).get(req.session.distributor_id);
+    
+    if (!distributor || !distributor.logo_path) {
+      return res.json({ success: true });
+    }
+    
+    // Delete the file
+    const logoPath = path.join(__dirname, distributor.logo_path);
+    if (fs.existsSync(logoPath)) {
+      fs.unlinkSync(logoPath);
+    }
+    
+    // Update distributor to clear logo path
+    db.prepare(`
+      UPDATE distributors 
+      SET logo_path = NULL 
+      WHERE id = ?
+    `).run(req.session.distributor_id);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting logo:', error);
+    res.status(500).json({ error: 'Error deleting logo' });
+  }
+});
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Login route with detailed debugging
 app.post('/api/login', (req, res) => {
