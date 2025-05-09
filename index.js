@@ -287,6 +287,147 @@ app.get('/api/diagnose-filesystem', (req, res) => {
   }
 });
 
+app.get('/api/diagnose-logo', (req, res) => {
+  try {
+    // Get distributor info
+    const distributorId = req.session.distributor_id;
+    const distributor = distributorId 
+      ? db.prepare('SELECT * FROM distributors WHERE id = ?').get(distributorId)
+      : null;
+    
+    // Check directories
+    const publicDir = path.join(__dirname, 'public');
+    const uploadsDir = path.join(publicDir, 'uploads');
+    const renderMountDir = '/opt/render/project/src/public/uploads';
+    
+    // Check database records
+    const allDistributors = db.prepare('SELECT id, name, logo_path FROM distributors').all();
+    
+    // Prepare diagnostics result
+    const result = {
+      session: {
+        exists: !!req.session,
+        id: req.session?.id,
+        distributor_id: distributorId,
+        authenticated: !!distributorId
+      },
+      distributor: distributor ? {
+        id: distributor.id,
+        name: distributor.name,
+        has_logo: !!distributor.logo_path,
+        logo_path: distributor.logo_path,
+        logo_path_type: distributor.logo_path ? (
+          distributor.logo_path.startsWith('data:') ? 'data_uri' : 
+          distributor.logo_path.startsWith('/') ? 'absolute_path' : 
+          'relative_path'
+        ) : null
+      } : null,
+      directories: {
+        current_dir: __dirname,
+        public_dir: {
+          path: publicDir,
+          exists: fs.existsSync(publicDir),
+          writable: false, // We'll set this below
+          contents: []
+        },
+        uploads_dir: {
+          path: uploadsDir,
+          exists: fs.existsSync(uploadsDir),
+          writable: false, // We'll set this below
+          contents: []
+        },
+        render_mount: {
+          path: renderMountDir,
+          exists: fs.existsSync(renderMountDir),
+          writable: false, // We'll set this below
+          contents: []
+        }
+      },
+      all_distributors: allDistributors
+    };
+    
+    // Check directory permissions
+    try {
+      if (result.directories.public_dir.exists) {
+        // Test write permission by trying to create a temporary file
+        const testFile = path.join(publicDir, '.write-test-' + Date.now());
+        fs.writeFileSync(testFile, 'test');
+        fs.unlinkSync(testFile);
+        result.directories.public_dir.writable = true;
+        
+        // Get directory contents
+        result.directories.public_dir.contents = fs.readdirSync(publicDir);
+      }
+    } catch (e) {
+      result.directories.public_dir.error = e.message;
+    }
+    
+    try {
+      if (result.directories.uploads_dir.exists) {
+        const testFile = path.join(uploadsDir, '.write-test-' + Date.now());
+        fs.writeFileSync(testFile, 'test');
+        fs.unlinkSync(testFile);
+        result.directories.uploads_dir.writable = true;
+        
+        result.directories.uploads_dir.contents = fs.readdirSync(uploadsDir);
+      }
+    } catch (e) {
+      result.directories.uploads_dir.error = e.message;
+    }
+    
+    try {
+      if (result.directories.render_mount.exists) {
+        const testFile = path.join(renderMountDir, '.write-test-' + Date.now());
+        fs.writeFileSync(testFile, 'test');
+        fs.unlinkSync(testFile);
+        result.directories.render_mount.writable = true;
+        
+        result.directories.render_mount.contents = fs.readdirSync(renderMountDir);
+      }
+    } catch (e) {
+      result.directories.render_mount.error = e.message;
+    }
+    
+    // Check if the logo file exists
+    if (distributor && distributor.logo_path && !distributor.logo_path.startsWith('data:')) {
+      // Try different paths
+      const possiblePaths = [
+        // Exactly as stored
+        distributor.logo_path,
+        // Treat as relative to __dirname
+        path.join(__dirname, distributor.logo_path),
+        // Relative to public
+        path.join(publicDir, distributor.logo_path),
+        // Just filename in uploads
+        path.join(uploadsDir, path.basename(distributor.logo_path)),
+        // In render mount path
+        path.join(renderMountDir, path.basename(distributor.logo_path))
+      ];
+      
+      result.file_checks = possiblePaths.map(p => ({
+        path: p,
+        exists: fs.existsSync(p),
+        size: fs.existsSync(p) ? fs.statSync(p).size : null
+      }));
+    }
+    
+    // Add environment info
+    result.environment = {
+      node_env: process.env.NODE_ENV || 'development',
+      hostname: require('os').hostname(),
+      platform: process.platform
+    };
+    
+    // Return full diagnostics
+    res.json(result);
+  } catch (error) {
+    console.error('Error in diagnostics:', error);
+    res.status(500).json({
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
 
 // Delete logo
 app.delete('/api/branding/logo', (req, res) => {
