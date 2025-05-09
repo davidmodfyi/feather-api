@@ -11,6 +11,10 @@ require('dotenv').config();
 
 // Get the db object from the database module
 const db = database.db;
+const isProduction = process.env.NODE_ENV === 'production';
+const uploadsDir = isProduction 
+  ? '/opt/render/project/src/public/uploads'
+  : path.join(__dirname, 'public', 'uploads');
 
 const app = express();
 app.use(express.json());
@@ -31,13 +35,26 @@ const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+const publicDir = isProduction
+  ? '/opt/render/project/src/public'
+  : path.join(__dirname, 'public');
 
+if (!fs.existsSync(publicDir)) {
+  fs.mkdirSync(publicDir, { recursive: true });
+}
 
+console.log('Using public directory:', publicDir);
+console.log('Using uploads directory:', uploadsDir);
 
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('Created uploads directory');
+}
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, uploadDir);
+    // Use the configured uploads directory
+    cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -155,20 +172,24 @@ app.get('/api/branding/logo', (req, res) => {
       SELECT logo_path FROM distributors WHERE id = ?
     `).get(req.session.distributor_id);
     
+    console.log('Distributor logo path:', distributor?.logo_path);
+    
     if (!distributor || !distributor.logo_path) {
       return res.json({ logo: null });
     }
     
     // Check if file exists
-    const logoPath = distributor.logo_path;
-    const absolutePath = path.join(__dirname, logoPath);
+    const absolutePath = path.join(__dirname, 'public', distributor.logo_path);
+    console.log('Checking logo at absolute path:', absolutePath);
     
     if (!fs.existsSync(absolutePath)) {
+      console.log('Logo file not found');
       return res.json({ logo: null });
     }
     
-    // Return logo path
-    const logoUrl = '/uploads/' + path.basename(logoPath);
+    // Return logo URL
+    const logoUrl = '/' + distributor.logo_path;
+    console.log('Returning logo URL:', logoUrl);
     res.json({ logo: logoUrl });
   } catch (error) {
     console.error('Error getting logo:', error);
@@ -188,20 +209,30 @@ app.post('/api/branding/logo', upload.single('logo'), (req, res) => {
   }
   
   try {
+    console.log('File uploaded:', req.file);
+    
     // Delete old logo if exists
     const distributor = db.prepare(`
       SELECT logo_path FROM distributors WHERE id = ?
     `).get(req.session.distributor_id);
     
     if (distributor && distributor.logo_path) {
-      const oldLogoPath = path.join(__dirname, distributor.logo_path);
-      if (fs.existsSync(oldLogoPath)) {
-        fs.unlinkSync(oldLogoPath);
+      try {
+        const oldLogoPath = path.join(__dirname, 'public', distributor.logo_path);
+        console.log('Checking for old logo at:', oldLogoPath);
+        if (fs.existsSync(oldLogoPath)) {
+          fs.unlinkSync(oldLogoPath);
+          console.log('Deleted old logo');
+        }
+      } catch (err) {
+        console.error('Error deleting old logo:', err);
+        // Continue even if delete fails
       }
     }
     
-    // Update distributor with new logo path
-    const relativeFilePath = path.join('uploads', path.basename(req.file.path));
+    // Store relative path from public directory
+    const relativeFilePath = 'uploads/' + path.basename(req.file.path);
+    console.log('Storing relative file path:', relativeFilePath);
     
     db.prepare(`
       UPDATE distributors 
@@ -209,14 +240,53 @@ app.post('/api/branding/logo', upload.single('logo'), (req, res) => {
       WHERE id = ?
     `).run(relativeFilePath, req.session.distributor_id);
     
-    // Return the new logo path
-    const logoUrl = '/uploads/' + path.basename(req.file.path);
+    // Return the URL to access the logo
+    const logoUrl = '/' + relativeFilePath;
+    console.log('Logo URL:', logoUrl);
     res.json({ success: true, logo: logoUrl });
   } catch (error) {
     console.error('Error uploading logo:', error);
     res.status(500).json({ error: 'Error uploading logo' });
   }
 });
+
+app.get('/api/diagnose-filesystem', (req, res) => {
+  try {
+    const publicDir = path.join(__dirname, 'public');
+    const uploadsDir = path.join(publicDir, 'uploads');
+    
+    const result = {
+      cwd: process.cwd(),
+      dirname: __dirname,
+      publicDirExists: fs.existsSync(publicDir),
+      uploadsDirExists: fs.existsSync(uploadsDir),
+      publicDirContents: [],
+      uploadsDirContents: []
+    };
+    
+    if (result.publicDirExists) {
+      try {
+        result.publicDirContents = fs.readdirSync(publicDir);
+      } catch (err) {
+        result.publicDirError = err.message;
+      }
+    }
+    
+    if (result.uploadsDirExists) {
+      try {
+        result.uploadsDirContents = fs.readdirSync(uploadsDir);
+      } catch (err) {
+        result.uploadsDirError = err.message;
+      }
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Error in filesystem diagnostic:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // Delete logo
 app.delete('/api/branding/logo', (req, res) => {
@@ -256,7 +326,8 @@ app.delete('/api/branding/logo', (req, res) => {
   }
 });
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Login route with detailed debugging
 app.post('/api/login', (req, res) => {
