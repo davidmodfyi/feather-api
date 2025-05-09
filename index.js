@@ -534,6 +534,100 @@ app.get('/api/cart', (req, res) => {
   }
 });
 
+// Get all orders for the current user
+app.get('/api/orders', (req, res) => {
+  console.log('Orders request');
+  
+  // Check if user is logged in
+  if (!req.session.user_id) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  try {
+    let query;
+    const params = [];
+    
+    // If admin, show all orders for their distributor
+    // If customer, show only their orders
+    if (req.session.userType === 'Admin') {
+      query = `
+        SELECT o.*, a.name as customer_name 
+        FROM orders o
+        LEFT JOIN users u ON o.user_id = u.id
+        LEFT JOIN accounts a ON o.account_id = a.id
+        WHERE u.distributor_id = ?
+        ORDER BY o.order_date DESC
+      `;
+      params.push(req.session.distributor_id);
+    } else {
+      query = `
+        SELECT o.*, a.name as customer_name 
+        FROM orders o
+        LEFT JOIN accounts a ON o.account_id = a.id
+        WHERE o.account_id = (SELECT account_id FROM users WHERE id = ?)
+        ORDER BY o.order_date DESC
+      `;
+      params.push(req.session.user_id);
+    }
+    
+    const orders = db.prepare(query).all(params);
+    console.log(`Found ${orders.length} orders for ${req.session.userType} user`);
+    
+    res.json(orders);
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    res.status(500).json({ error: 'Error fetching orders' });
+  }
+});
+
+// Get order details (items for a specific order)
+app.get('/api/orders/:orderId/items', (req, res) => {
+  console.log('Order items request for order:', req.params.orderId);
+  
+  // Check if user is logged in
+  if (!req.session.user_id) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  const { orderId } = req.params;
+  
+  try {
+    // First check if the user has access to this order
+    let order;
+    
+    if (req.session.userType === 'Admin') {
+      order = db.prepare(`
+        SELECT o.* FROM orders o
+        JOIN users u ON o.user_id = u.id
+        WHERE o.id = ? AND u.distributor_id = ?
+      `).get(orderId, req.session.distributor_id);
+    } else {
+      order = db.prepare(`
+        SELECT o.* FROM orders o
+        WHERE o.id = ? AND o.account_id = (SELECT account_id FROM users WHERE id = ?)
+      `).get(orderId, req.session.user_id);
+    }
+    
+    if (!order) {
+      return res.status(403).json({ error: 'Access denied to this order' });
+    }
+    
+    // Get order items with product details
+    const orderItems = db.prepare(`
+      SELECT oi.*, p.name, p.sku, p.image_url, p.description
+      FROM order_items oi
+      JOIN products p ON oi.product_id = p.id
+      WHERE oi.order_id = ?
+    `).all(orderId);
+    
+    console.log(`Found ${orderItems.length} items for order ${orderId}`);
+    res.json(orderItems);
+  } catch (error) {
+    console.error('Error fetching order items:', error);
+    res.status(500).json({ error: 'Error fetching order items' });
+  }
+});
+
 // Add item to cart
 app.post('/api/cart', (req, res) => {
   console.log('Add to cart request');
