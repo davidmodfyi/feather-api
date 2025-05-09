@@ -187,8 +187,9 @@ app.get('/api/branding/logo', (req, res) => {
       return res.json({ logo: null });
     }
     
-    // Return logo URL
-    const logoUrl = '/' + distributor.logo_path;
+    // IMPORTANT: Return the full URL to the logo, including the host
+    // This is the key change - construct a full URL to the API server
+    const logoUrl = `https://api.featherstorefront.com/${distributor.logo_path}`;
     console.log('Returning logo URL:', logoUrl);
     res.json({ logo: logoUrl });
   } catch (error) {
